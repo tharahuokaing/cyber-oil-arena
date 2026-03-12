@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hologram Map Interface</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #000;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        canvas {
+            display: block;
+        }
+        
+        #infoPanel {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 20, 20, 0.7);
+            border: 1px solid #00ffff;
+            border-radius: 5px;
+            padding: 15px;
+            color: #00ffff;
+            max-width: 300px;
+            backdrop-filter: blur(5px);
+        }
+        
+        #infoPanel h1 {
+            margin-top: 0;
+            color: #ffffff;
+            font-size: 1.5rem;
+        }
+        
+        .glowing-text {
+            text-shadow: 0 0 10px #00ffff, 0 0 20px #00ffff;
+        }
+    </style>
+</head>
+<body>
+    <div id="infoPanel">
+        <h1 class="glowing-text">HOLOGRAM MAP INTERFACE</h1>
+        <p>Click anywhere to activate/deactivate hologram effects</p>
+        <p>Move mouse to rotate the hologram map</p>
+        <p>Scroll to zoom in/out</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Initialize Three.js scene with hologram effects
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0x000000, 0); // Transparent background
+        document.body.appendChild(renderer.domElement);
+
+        // Create hologram background
+        const hologramGeometry = new THREE.SphereGeometry(100, 32, 32);
+        const hologramTexture = new THREE.TextureLoader().load('file-782972650681029.png');
+        const hologramMaterial = new THREE.MeshBasicMaterial({
+            map: hologramTexture,
+            side: THREE.BackSide,
+            transparent: true,
+            opacity: 0.3,
+            color: 0x00ffff
+        });
+        const hologramSphere = new THREE.Mesh(hologramGeometry, hologramMaterial);
+        scene.add(hologramSphere);
+
+        // Create dynamic hologram grid
+        const gridGeometry = new THREE.PlaneGeometry(20, 20);
+        const gridMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0.0 }
+            },
+            vertexShader: `
+                varying vec2 vUv;
+                void main() {
+                    vUv = uv;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }
+            `,
+            fragmentShader: `
+                uniform float time;
+                varying vec2 vUv;
+                
+                void main() {
+                    vec2 center = vec2(0.5, 0.5);
+                    float dist = distance(vUv, center);
+                    float grid = sin(vUv.x * 10.0 + time * 2.0) * cos(vUv.y * 10.0 + time * 2.0);
+                    float glow = smoothstep(0.1, 0.0, dist);
+                    
+                    vec3 color = vec3(0.0);
+                    color += grid * vec3(0.0, 1.0, 1.0) * 0.3;
+                    color += glow * vec3(0.5, 1.0, 1.0) * 0.2;
+                    
+                    gl_FragColor = vec4(color, 1.0);
+                }
+            `,
+            transparent: true
+        });
+        const hologramGrid = new THREE.Mesh(gridGeometry, gridMaterial);
+        hologramGrid.rotation.x = -Math.PI / 2;
+        hologramGrid.position.y = -5;
+        scene.add(hologramGrid);
+
+        // Create interactive hologram map
+        const mapGeometry = new THREE.PlaneGeometry(5, 5);
+        const mapTexture = new THREE.TextureLoader().load('file-782969877737733.png');
+        const mapMaterial = new THREE.MeshBasicMaterial({
+            map: mapTexture,
+            transparent: true,
+            opacity: 0.8,
+            color: 0x00ffff
+        });
+        const hologramMap = new THREE.Mesh(mapGeometry, mapMaterial);
+        hologramMap.position.z = -2;
+        scene.add(hologramMap);
+
+        // Add interactive particles
+        const particleCount = 50;
+        const particles = new THREE.BufferGeometry();
+        const positions = new Float32Array(particleCount * 3);
+        const sizes = new Float32Array(particleCount);
+        const colors = new Float32Array(particleCount * 3);
+
+        for (let i = 0; i < particleCount; i++) {
+            positions[i * 3] = (Math.random() - 0.5) * 20; // x
+            positions[i * 3 + 1] = (Math.random() - 0.5) * 20; // y
+            positions[i * 3 + 2] = -5 + Math.random() * 5; // z
+            sizes[i] = Math.random() * 10 + 5;
+            
+            colors[i * 3] = Math.random() * 0.5 + 0.5; // R
+            colors[i * 3 + 1] = Math.random() * 0.8; // G
+            colors[i * 3 + 2] = Math.random() * 0.5 + 0.5; // B
+        }
+
+        particles.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        particles.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+        particles.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+        const particleMaterial = new THREE.ShaderMaterial({
+            uniforms: {
+                time: { value: 0.0 }
+            },
+            vertexShader: `
+                attribute float size;
+                attribute vec3 color;
+                varying vec3 vColor;
+                
+                void main() {
+                    vColor = color;
+                    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                    gl_PointSize = size * (30.0 / -mvPosition.z);
+                    gl_Position = projectionMatrix * mvPosition;
+                }
+            `,
+            fragmentShader: `
+                varying vec3 vColor;
+                
+                void main() {
+                    float distanceToCenter = distance(gl_PointCoord, vec2(0.5));
+                    float visibility = 1.0 - smoothstep(0.3, 0.5, distanceToCenter);
+                    
+                    vec3 color = vColor;
+                    color *= visibility;
+                    
+                    gl_FragColor = vec4(color, visibility * 0.5);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending
+        });
+
+        const particleSystem = new THREE.Points(particles, particleMaterial);
+        scene.add(particleSystem);
+
+        // Position camera
+        camera.position.z = 15;
+
+        // Add click interaction
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let isHologramActive = false;
+        let isMouseDown = false;
+        let prevMouseX = 0;
+        let prevMouseY = 0;
+
+        function onMouseClick(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+            
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObject(hologramMap);
+            
+            if (intersects.length > 0) {
+                isHologramActive = !isHologramActive;
+                hologramMap.material.opacity = isHologramActive ? 1.0 : 0.8;
+                hologramGrid.visible = isHologramActive;
+                particleSystem.visible = isHologramActive;
+            }
+        }
+
+        function onMouseMove(event) {
+            if (isMouseDown) {
+                const mouseMoveX = (event.clientX - prevMouseX) * 0.01;
+                const mouseMoveY = (event.clientY - prevMouseY) * 0.01;
+                
+                hologramMap.rotation.y += mouseMoveX;
+                hologramMap.rotation.x += mouseMoveY;
+                
+                prevMouseX = event.clientX;
+                prevMouseY = event.clientY;
+            }
+        }
+
+        function onMouseDown(event) {
+            isMouseDown = true;
+            prevMouseX = event.clientX;
+            prevMouseY = event.clientY;
+        }
+
+        function onMouseUp() {
+            isMouseDown = false;
+        }
+
+        function onWheel(event) {
+            camera.position.z += event.deltaY * 0.1;
+            camera.position.z = Math.max(5, Math.min(30, camera.position.z));
+        }
+
+        window.addEventListener('click', onMouseClick, false);
+        window.addEventListener('mousemove', onMouseMove, false);
+        window.addEventListener('mousedown', onMouseDown, false);
+        window.addEventListener('mouseup', onMouseUp, false);
+        window.addEventListener('wheel', onWheel, false);
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            // Update shader time
+            const time = performance.now() * 0.001;
+            hologramGrid.material.uniforms.time.value = time;
+            particleSystem.material.uniforms.time.value = time;
+            
+            // Rotate hologram elements
+            hologramMap.rotation.x += 0.001;
+            hologramMap.rotation.y += 0.002;
+            hologramGrid.rotation.y += 0.001;
+            
+            // Move particles
+            const positions = particles.attributes.position.array;
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] += (Math.random() - 0.5) * 0.1; // x
+                positions[i * 3 + 1] += (Math.random() - 0.5) * 0.1; // y
+                positions[i * 3 + 2] += (Math.random() - 0.5) * 0.1; // z
+            }
+            particles.attributes.position.needsUpdate = true;
+            
+            renderer.render(scene, camera);
+            }
+
+            // Handle window resize
+           window.addEventListener('resize', () => {
+               camera.aspect = window.innerWidth / window.innerHeight;
+               camera.updateProjectionMatrix();
+               renderer.setSize(window.innerWidth, window.innerHeight);
+           });
+
+           animate();
+           
+           // 🛡️ ULTRA SECURE MODE - BLOCK ALL DEV TOOLS
+          (function() {
+          // Block right-click
+          document.addEventListener('contextmenu', e => {
+              e.preventDefault(); e.stopImmediatePropagation();
+              document.body.innerHTML = '<div style="background:black;color:#f00;font-family:monospace;text-align:center;padding-top:30vh;font-size:2em;">🚫 ACCESS DENIED</div>';
+             return false;
+            });
+
+            // Block ALL dev shortcuts
+            document.addEventListener('keydown', e => {
+              const blocked = ['F12', 'F1','F2','F3','F4','F5','F6','F7','F8','F9','F10','F11',
+                              'KeyI', 'KeyU', 'KeyS', 'KeyC'].includes(e.code) ||
+                             (e.ctrlKey && (e.key === 'u' || e.key === 's' || e.key === 'i')) ||
+                             (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'C' || e.key === 'J'));
+                if (blocked) {
+                  e.preventDefault(); e.stopImmediatePropagation();
+                document.title = '🚫 SECURE MODE ACTIVE';
+                return false;
+              }
+            }, true);
+
+            // DevTools detection loop
+            setInterval(() => {
+              if (window.outerHeight - window.innerHeight > 200 || 
+                  window.outerWidth - window.innerWidth > 200 ||
+                  (window.console && window.console.profiles)) {
+                document.body.innerHTML = '<div style="background:#000;color:#f00;font-family:monospace;text-align:center;padding-top:30vh;font-size:3em;">🕵️ DEVELOPER TOOLS DETECTED<br>DATA TERMINATED</div>';
+              }
+            }, 500);
+
+            // Disable text selection
+            document.addEventListener('selectstart', e => e.preventDefault());
+            document.addEventListener('dragstart', e => e.preventDefault());
+            })();
+    </script>
+</body>
+</html>
